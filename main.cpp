@@ -7,14 +7,20 @@ using namespace cv;
 #define ROUNDNUM(x) ((int)(x + 0.5f))
 
 const float AVERAGE = 2.0f;
-
+ 
 void averageFrame(Mat& frame);
+bool findObject(float[] objPos&);
+float[] trackObject(float[] objPos);
 
 void log(char* toPrint) {
 	std::cout << toPrint << std::endl;
 }
 
 int main() {
+	
+        bool foundObj = false;
+        float objPos[4]; //{x, y, width, height}
+
 	log("Starting..");
 
 	VideoCapture camera(0);
@@ -33,6 +39,12 @@ int main() {
 		camera >> currentFrame;
 
 		averageFrame(currentFrame);
+		
+		if (foundObj) {
+			objPos = trackObject(objPos);
+		} else {
+			foundObj = findObject(objPos);
+		}
 
 		imshow("wat", currentFrame);
 		
