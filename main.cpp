@@ -14,17 +14,19 @@ public:
 
 const float AVERAGE = 1.0f;
 
-void averageFrame(Mat& frame);
+void averageFrame(int rows, int cols, Vec3b** frame);
 
 Vec3b getColorAt(Mat frame, int x, int y);
 
-double getAvgColorAt(Mat frame, int x, int y);
+double getAvgColorAt(Vec3b** frame, int x, int y, int rows, int cols);
 
-Bounds findObject(Mat frame);
+Bounds findObject(int rows, int cols, Vec3b** frame);
 
 void drawObject(Mat& frame, Bounds draw);
 
-void recursiveFlood(Mat frame, int x, int y, int cols, int rows, int& xMin, int& xMax, int& yMin, int& yMax);
+void recursiveFlood(Vec3b** frame, int x, int y, int cols, int rows, int& xMin, int& xMax, int& yMin, int& yMax, int lastAvg);
+
+Vec3b** toArray(Mat frame);
 
 void log(char* toPrint) {
 	std::cout << toPrint << std::endl;
@@ -42,7 +44,6 @@ int main() {
 
 	Mat edges;
 	namedWindow("wat");
-	resizeWindow("wat", 1024, 720);
 
 	while (true) {
 		Mat currentFrame;
@@ -53,11 +54,17 @@ int main() {
 
 		currentFrame.copyTo(detectFrame);
 
-		averageFrame(detectFrame);
-		Bounds b = findObject(detectFrame);
+		Vec3b** detectArray = toArray(detectFrame);
+
+		averageFrame(detectFrame.rows, detectFrame.cols, detectArray);
+
+		Bounds b = findObject(detectFrame.rows, detectFrame.cols, detectArray);
 		drawObject(currentFrame, b);
 
+		//imshow("wat", detectFrame);
 		imshow("wat", currentFrame);
+
+		delete detectArray;
 		
 		if (waitKey(30) >= 0) break;
 	}
@@ -65,13 +72,11 @@ int main() {
 	return 0;
 }
 
-void averageFrame(Mat& frame) {
-	unsigned char *input = (unsigned char*)(frame.data);
+void averageFrame(int rows, int cols, Vec3b **frame) {
 
-	for (int y = 0; y < frame.rows; y++) {
-		Vec3b* row = frame.ptr<Vec3b>(y);
-		for (int x = 0; x < frame.cols; x++) {
-			Vec3b& color = row[x];
+	for (int y = 0; y < rows; y++) {
+		for (int x = 0; x < cols; x++) {
+			Vec3b& color = frame[y][x];
 
 			color[0] = ROUNDNUM(color[0] / (255.0f / AVERAGE)) * (255.0f / AVERAGE);
 			color[1] = ROUNDNUM(color[1] / (255.0f / AVERAGE)) * (255.0f / AVERAGE);
@@ -80,38 +85,25 @@ void averageFrame(Mat& frame) {
 	}
 }
 
-Bounds findObject(Mat frame) {
+Vec3b** toArray(Mat frame) {
+	Vec3b** toReturn = new Vec3b*[frame.rows];
+	for (int y = 0; y < frame.rows; y++) {
+		toReturn[y] = frame.ptr<Vec3b>(y);
+	}
+	return toReturn;
+}
+
+Bounds findObject(int rows, int cols, Vec3b** frame) {
 	Bounds b;
 	b.xMax = b.xMin = b.yMax = b.yMin = 0;
-	for (int y = 0; y < frame.rows; y++) {
-		Vec3b* row = frame.ptr<Vec3b>(y);
-		for (int x = 0; x < frame.cols; x++) {
-			Vec3b& color = row[x];
-			Vec3b& tcolor = getColorAt(frame, x, y);
+	for (int y = 0; y < rows; y++) {
+		for (int x = 0; x < cols; x++) {
+			Vec3b& color = frame[y][x];
 			double avg = (color[0] + color[1] + color[2]) / 3.0;
-			if (abs(255 - avg) < 3) {
+			if (abs(255 - avg) < 50) {
 				int xMin = x, xMax = x, yMin = y, yMax = y;
 
-				recursiveFlood(frame, x, y, frame.cols, frame.rows, xMin, xMax, yMin, yMax);
-
-				/*while (xMin >= 0 && abs(255 - getAvgColorAt(frame, xMin, y)) < 3) {
-					xMin--;
-				}
-
-				int xMax = x;
-				while (xMax < frame.cols && abs(255 - getAvgColorAt(frame, xMax, y)) < 3) {
-					xMax++;
-				}
-
-				int yMin = y;
-				while (yMin >= 0 && abs(255 - getAvgColorAt(frame, x, yMin)) < 3) {
-					yMin--;
-				}
-
-				int yMax = y;
-				while (yMax < frame.rows && abs(255 - getAvgColorAt(frame, x, yMax)) < 3) {
-					yMax++;
-				}*/
+				recursiveFlood(frame, x, y, cols, rows, xMin, xMax, yMin, yMax, avg);
 
 				b.xMin = xMin;
 				b.xMax = xMax;
@@ -120,32 +112,32 @@ Bounds findObject(Mat frame) {
 
 				if (b.isObject())
 					return b;
-				
-				//displayColor[0] = 0;
-				//displayColor[1] = 255;
-				//displayColor[2] = 0;
+				else {
+					x = xMax;
+					y = yMax;
+				}
 			}
 		}
 	}
 	return b;
 }
 
-void recursiveFlood(Mat frame, int x, int y, int cols, int rows, int& xMin, int& xMax, int& yMin, int& yMax) {
-	if (xMin > 0 && abs(255 - getAvgColorAt(frame, xMin, y)) < 3) {
+void recursiveFlood(Vec3b** frame, int x, int y, int cols, int rows, int& xMin, int& xMax, int& yMin, int& yMax, int lastAvg) {
+	if (xMin > 0 && abs(lastAvg - getAvgColorAt(frame, xMin, y, rows, cols)) < 3) {
 		xMin--;
-		recursiveFlood(frame, xMin, y, cols, rows, xMin, xMax, yMin, yMax);
+		recursiveFlood(frame, xMin, y, cols, rows, xMin, xMax, yMin, yMax, lastAvg);
 	}
-	if (xMax < cols && abs(255 - getAvgColorAt(frame, xMax, y)) < 3) {
+	if (xMax < cols && abs(lastAvg - getAvgColorAt(frame, xMax, y, rows, cols)) < 3) {
 		xMax++;
-		recursiveFlood(frame, xMax, y, cols, rows, xMin, xMax, yMin, yMax);
+		recursiveFlood(frame, xMax, y, cols, rows, xMin, xMax, yMin, yMax, lastAvg);
 	}
-	if (yMin > 0 && abs(255 - getAvgColorAt(frame, x, yMin)) < 3) {
+	if (yMin > 0 && abs(lastAvg - getAvgColorAt(frame, x, yMin, rows, cols)) < 3) {
 		yMin--;
-		recursiveFlood(frame, x, yMin, cols, rows, xMin, xMax, yMin, yMax);
+		recursiveFlood(frame, x, yMin, cols, rows, xMin, xMax, yMin, yMax, lastAvg);
 	}
-	if (yMax < rows && abs(255 - getAvgColorAt(frame, x, yMax)) < 3) {
+	if (yMax < rows && abs(lastAvg - getAvgColorAt(frame, x, yMax, rows, cols)) < 3) {
 		yMax++;
-		recursiveFlood(frame, x, yMax, cols, rows, xMin, xMax, yMin, yMax);
+		recursiveFlood(frame, x, yMax, cols, rows, xMin, xMax, yMin, yMax, lastAvg);
 	}
 }
 
@@ -162,11 +154,11 @@ void drawObject(Mat& frame, Bounds b) {
 	}
 }
 
-double getAvgColorAt(Mat frame, int x, int y) {
-	if (x < 0 || x >= frame.cols || y < 0 || y >= frame.rows)
+double getAvgColorAt(Vec3b** frame, int x, int y, int rows, int cols) {
+	if (x < 0 || x >= cols || y < 0 || y >= rows)
 		return 0;
 	
-	Vec3b pixel = getColorAt(frame, x, y);
+	Vec3b pixel = frame[y][x];
 
 	return (pixel[0] + pixel[1] + pixel[2]) / 3.0;
 }
@@ -178,6 +170,6 @@ Vec3b getColorAt(Mat frame, int x, int y) {
 
 
 bool Bounds::isObject() {
-	return xMax - xMin > 20 && yMax - yMin > 30;
+	return xMax - xMin > 50 && yMax - yMin > 80;
 }
 
